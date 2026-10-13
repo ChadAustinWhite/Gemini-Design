@@ -237,6 +237,7 @@ export function Editor() {
       <div className="editor-body">
         <div className="stage-wrap" id="stage">
           <div className="stage">
+            <div className="stage-scroll">
             {app.hint && !app.verifier && (
               <div className="hint-bar">
                 <Sparkle size={16} />
@@ -355,6 +356,7 @@ export function Editor() {
                 )}
               </div>
 
+              {!app.motionOpen && (
               <div className="float-toolbar" role="toolbar" aria-label="Canvas tools" onClick={(e) => e.stopPropagation()}>
                 {TOOLS.map((t) => {
                   const Icon = t.icon
@@ -386,22 +388,6 @@ export function Editor() {
                   </button>
                 </Tip>
               </div>
-
-              {app.motionOpen && (
-                <div className="motion-tray" onClick={(e) => e.stopPropagation()}>
-                  <div className="motion-tray-head">
-                    <span>Motion</span>
-                    {app.reduceMotion && <span className="motion-note">Playback stays still while reduced motion is on</span>}
-                    <button type="button" className="btn-quiet" onClick={() => app.play(concept.id)}>
-                      <IcoPlay size={14} /> Play again
-                    </button>
-                    <button type="button" className="icon-btn" aria-label="Close motion" onClick={app.toggleMotion}>
-                      <IcoClose size={16} />
-                    </button>
-                  </div>
-                  <p className="motion-note">Play an alternative without replacing the selected version.</p>
-                  <MotionCompare concept={concept} />
-                </div>
               )}
 
               {app.showCode && (
@@ -425,6 +411,27 @@ export function Editor() {
                   <pre>{svgText}</pre>
                 </div>
               )}
+            </div>
+
+            {app.motionOpen && (
+              <div className="motion-tray">
+                <div className="motion-tray-head">
+                  <span>Motion</span>
+                  <span className="motion-note">
+                    {app.reduceMotion
+                      ? 'Playback stays still while reduced motion is on'
+                      : 'Play an alternative without replacing the selected version.'}
+                  </span>
+                  <button type="button" className="btn-quiet" onClick={() => app.play(concept.id)}>
+                    <IcoPlay size={14} /> Play again
+                  </button>
+                  <button type="button" className="icon-btn" aria-label="Close motion" onClick={app.toggleMotion}>
+                    <IcoClose size={16} />
+                  </button>
+                </div>
+                <MotionCompare concept={concept} />
+              </div>
+            )}
             </div>
 
             <div className="refine-dock">

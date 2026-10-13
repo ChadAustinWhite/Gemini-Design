@@ -837,11 +837,19 @@ kbd {
 }
 
 .editor-body { display: grid; grid-template-columns: minmax(0, 1fr) var(--panel-w); min-height: 0; }
-.stage-wrap { min-height: 0; overflow: auto; display: flex; }
+.stage-wrap { min-height: 0; overflow: hidden; display: flex; }
 .stage {
   flex: 1;
   width: 100%;
-  min-height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.stage-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -981,7 +989,19 @@ kbd {
   color: var(--text-secondary);
 }
 
-.refine-dock { width: min(640px, 100%); }
+.refine-dock {
+  position: relative;
+  z-index: 6;
+  flex: none;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 12px 28px 16px;
+  background: var(--stage);
+  border-top: 1px solid var(--border);
+}
+.refine-dock .refine-panel,
+.refine-dock .refine-collapsed { width: min(720px, 100%); }
 .refine-collapsed {
   margin: 0 auto;
   display: flex;
@@ -1294,14 +1314,14 @@ kbd {
   to { clip-path: inset(0 0 0 0 round 8px); }
 }
 
-.artboard.has-motion { align-items: flex-start; min-height: 500px; padding-top: 20px; padding-bottom: 200px; }
-.artboard.has-motion .mark-block { margin-inline: auto; }
+.artboard.has-motion { flex: none; min-height: 0; padding: 16px 24px; }
+.stage-scroll:has(.motion-tray) { gap: 6px; padding: 8px 28px 4px; }
 .motion-banner {
   width: min(840px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 4px;
+  padding: 6px 12px;
   border-radius: 16px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1349,22 +1369,20 @@ kbd {
 }
 .pending-brief p { font-size: 14px; line-height: 1.4; }
 .motion-tray {
-  position: absolute;
-  left: 50%;
-  bottom: 16px;
-  transform: translateX(-50%);
-  width: min(640px, calc(100% - 24px));
+  position: relative;
+  width: min(840px, 100%);
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
   border-radius: 18px;
   background: var(--surface);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-float);
-  z-index: 4;
+  box-shadow: var(--shadow);
 }
 .motion-tray-head { display: flex; align-items: center; gap: 8px; padding: 0 4px; font-size: 13px; font-weight: 500; }
+.motion-tray-head .motion-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .motion-tray-head .btn-quiet { margin-left: auto; }
 .motion-tray-head .icon-btn { margin-left: 0; }
 .motion-note { color: var(--text-secondary); font-weight: 400; }
