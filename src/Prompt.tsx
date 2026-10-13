@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { BRIEFS, MODELS, type ModelId } from './model'
-import { IcoArrowUp, IcoChevronDown, IcoMic, IcoPlus } from './icons'
+import { IcoArrowUp, IcoChevronDown, IcoMic, IcoPlus, IcoShield, IcoTools } from './icons'
 import { useApp } from './store'
 import { useDismiss } from './ui'
 
@@ -26,8 +26,10 @@ export function PromptComposer({
   const app = useApp()
   const [plus, setPlus] = useState(false)
   const [models, setModels] = useState(false)
+  const [tools, setTools] = useState(false)
   const plusRef = useDismiss(plus, () => setPlus(false))
   const modelRef = useDismiss(models, () => setModels(false))
+  const toolsRef = useDismiss(tools, () => setTools(false))
   const area = useRef<HTMLTextAreaElement>(null)
   const modelLabel = MODELS.find((m) => m.id === app.model)?.label ?? 'Flash-Lite'
   const canSend = value.trim().length > 0 && !busy
@@ -49,7 +51,29 @@ export function PromptComposer({
         if (!busy) onSubmit()
       }}
     >
-      <div className="prompt-row">
+      {variant === 'home' && (
+        <div className="prompt-field">
+          <IcoShield size={18} />
+          <textarea
+            id={inputId}
+            ref={area}
+            rows={1}
+            value={value}
+            maxLength={400}
+            placeholder={placeholder}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${inputId}-error` : undefined}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                if (!busy) onSubmit()
+              }
+            }}
+          />
+        </div>
+      )}
+      <div className={variant === 'home' ? 'prompt-tools' : 'prompt-row'}>
         <div className="pop-anchor" ref={plusRef}>
           <button
             type="button"
@@ -59,6 +83,7 @@ export function PromptComposer({
             onClick={() => {
               setPlus((v) => !v)
               setModels(false)
+              setTools(false)
             }}
           >
             <IcoPlus size={18} />
@@ -82,23 +107,63 @@ export function PromptComposer({
             </div>
           )}
         </div>
-        <textarea
-          id={inputId}
-          ref={area}
-          rows={1}
-          value={value}
-          maxLength={400}
-          placeholder={placeholder}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${inputId}-error` : undefined}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              if (!busy) onSubmit()
-            }
-          }}
-        />
+        {variant === 'home' && (
+          <div className="pop-anchor" ref={toolsRef}>
+            <button
+              type="button"
+              className="tools-btn"
+              aria-expanded={tools}
+              aria-haspopup="menu"
+              onClick={() => {
+                setTools((v) => !v)
+                setPlus(false)
+                setModels(false)
+              }}
+            >
+              <IcoTools size={18} />
+              Tools
+              <span className="tools-dot" aria-hidden="true" />
+            </button>
+            {tools && (
+              <div className="menu" role="menu">
+                {['Create image', 'Create music', 'Help me learn', 'Boost my day', 'Write anything'].map((label) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    key={label}
+                    onClick={() => {
+                      onChange(label)
+                      setTools(false)
+                      area.current?.focus()
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {variant !== 'home' && (
+          <textarea
+            id={inputId}
+            ref={area}
+            rows={1}
+            value={value}
+            maxLength={400}
+            placeholder={placeholder}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${inputId}-error` : undefined}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                if (!busy) onSubmit()
+              }
+            }}
+          />
+        )}
+        {variant === 'home' && <span className="prompt-spacer" />}
         <div className="prompt-end">
           <div className="pop-anchor" ref={modelRef}>
             <button
@@ -109,6 +174,7 @@ export function PromptComposer({
               onClick={() => {
                 setModels((v) => !v)
                 setPlus(false)
+                setTools(false)
               }}
             >
               <span className="ready-dot" aria-hidden="true" />

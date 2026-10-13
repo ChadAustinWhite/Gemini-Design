@@ -21,6 +21,45 @@ function Svg({ size = 20, children, ...rest }: P & SVGProps<SVGSVGElement>) {
   )
 }
 
+export function IcoImageSpark({ size = 18 }: P) {
+  const id = useId().replace(/:/g, '')
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="4" y1="20" x2="20" y2="3" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#F2B84B" />
+          <stop offset="100%" stopColor="#E07A28" />
+        </linearGradient>
+      </defs>
+      <path
+        fill={`url(#${id})`}
+        d="M12 2.2c.28 3.15 1.15 5.55 3.28 7.25C17.45 11.15 19.85 11.72 21.8 12c-3.15.28-5.55 1.15-7.25 3.28C12.85 17.45 12.28 19.85 12 21.8c-.28-3.15-1.15-5.55-3.28-7.25C6.55 12.85 4.15 12.28 2.2 12c3.15-.28 5.55-1.15 7.25-3.28C11.15 6.55 11.72 4.15 12 2.2z"
+      />
+    </svg>
+  )
+}
+
+export function IcoGuitar({ size = 18 }: P) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <g fill="#E23B86">
+        <circle cx="7.4" cy="16.6" r="5" />
+        <polygon points="10.2,13.4 13.1,15.6 18.6,8.2 15.7,6" />
+        <polygon points="15.7,6 18.6,8.2 21.2,4.8 17.6,2.6" />
+      </g>
+      <circle cx="7.4" cy="16.6" r="1.45" fill="#F7C4D8" />
+    </svg>
+  )
+}
+
+export const IcoTools = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 8.2h16M4 15.8h16" />
+    <circle cx="9" cy="8.2" r="2.1" />
+    <circle cx="15" cy="15.8" r="2.1" />
+  </Svg>
+)
+
 export function Sparkle({ size = 20 }: P) {
   const id = useId().replace(/:/g, '')
   return (

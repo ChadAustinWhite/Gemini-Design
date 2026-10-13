@@ -16,6 +16,7 @@ import {
   type Notebook,
   type Phase,
   type MotionId,
+  type MotionSnap,
   type MotionStrength,
   type Placement,
   type Project,
@@ -25,15 +26,16 @@ import {
   type Tool,
   briefLabel,
   buildConcepts,
+  clampTune,
   clone,
+  defaultSnap,
   interpret,
   makeHint,
-  motionChangeNote,
-  motionFollowUp,
+  motionChanges,
   motionFromText,
-  motionMs,
   motionStartNote,
   startingMotion,
+  tuneIntent,
   placementPatch,
   recommendColor,
   recommendFont,
@@ -142,16 +144,27 @@ interface Store {
   toggleCompare: (id: string) => void
   playingId: string | null
   playKey: number
-  play: (id: string) => void
+  play: (id: string, spec?: MotionSnap) => void
+  playSnap: MotionSnap
+  tuneOf: (concept: Concept) => MotionSnap
+  shownTune: (concept: Concept) => MotionSnap
   motionOf: (concept: Concept) => MotionId
   strengthOf: (concept: Concept) => MotionStrength
   motionStory: (concept: Concept, prompt: string) => string
+  motionDiffOf: (concept: Concept) => string
   canUndoMotion: (conceptId: string) => boolean
   motionOpen: boolean
   setMotionOpen: (v: boolean) => void
   toggleMotion: () => void
   chooseMotion: (id: MotionId, conceptId?: string) => void
+  previewMotion: (id: MotionId, conceptId?: string) => void
   setMotionStrength: (strength: MotionStrength, conceptId?: string) => void
+  setDuration: (ms: number, conceptId?: string, live?: boolean) => void
+  setEasing: (easing: MotionSnap['easing'], conceptId?: string) => void
+  setMovement: (movement: number, conceptId?: string, live?: boolean) => void
+  endMotionLive: (conceptId?: string) => void
+  playBefore: (conceptId?: string) => void
+  playAfter: (conceptId?: string) => void
   undoMotion: (conceptId?: string) => void
   focusMark: (conceptId: string) => void
   motionHintOn: boolean
@@ -215,13 +228,8 @@ export function Provider({ children }: { children: ReactNode }) {
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [playingId, setPlayingId] = useState<string | null>(null)
   const [playKey, setPlayKey] = useState(0)
-  const [playSpec, setPlaySpec] = useState<{ motion: MotionId; strength: MotionStrength }>({
-    motion: 'draw',
-    strength: 'natural',
-  })
-  const [memory, setMemory] = useState<
-    Record<string, { motion: MotionId; strength: MotionStrength; past: { motion: MotionId; strength: MotionStrength }[] }>
-  >({})
+  const [playSpec, setPlaySpec] = useState<MotionSnap>(defaultSnap('draw'))
+  const [memory, setMemory] = useState<Record<string, MotionSnap & { past: MotionSnap[] }>>({})
   const [motionOpen, setMotionOpen] = useState(false)
   const [motionHintOn, setMotionHintOn] = useState(true)
   const [pendingBrief, setPendingBrief] = useState<string | null>(null)
@@ -230,6 +238,9 @@ export function Provider({ children }: { children: ReactNode }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [savedPulse, setSavedPulse] = useState(false)
   const live = useRef(false)
+  const motionLive = useRef(false)
+  const tuneRef = useRef<Record<string, MotionSnap>>({})
+  const pastRef = useRef<Record<string, MotionSnap[]>>({})
   const gen = useRef(0)
   const refineGen = useRef(0)
   const editorRef = useRef(editor)
@@ -289,7 +300,7 @@ export function Provider({ children }: { children: ReactNode }) {
     if (!playingId) return
     const t = window.setTimeout(
       () => setPlayingId(null),
-      reduceMotion ? 180 : motionMs(playSpec.motion, playSpec.strength),
+      reduceMotion ? 180 : playSpec.duration,
     )
     return () => window.clearTimeout(t)
   }, [playingId, playKey, reduceMotion, playSpec])
@@ -320,50 +331,79 @@ export function Provider({ children }: { children: ReactNode }) {
   }
 
   function remembered(concept: Concept) {
-    return (
-      memory[concept.id] ?? {
-        motion: startingMotion(concept),
-        strength: 'natural' as const,
-        past: [],
-      }
-    )
+    return memory[concept.id] ?? { ...defaultSnap(startingMotion(concept)), past: [] }
+  }
+
+  function tuneOf(concept: Concept): MotionSnap {
+    const { past: _past, ...snap } = remembered(concept)
+    return snap
+  }
+
+  function shownTune(concept: Concept): MotionSnap {
+    if (playingId === concept.id) return playSpec
+    return tuneOf(concept)
   }
 
   function motionOf(concept: Concept) {
-    return remembered(concept).motion
+    return tuneOf(concept).motion
   }
 
   function strengthOf(concept: Concept) {
-    return remembered(concept).strength
+    return tuneOf(concept).strength
+  }
+
+  function motionDiffOf(concept: Concept) {
+    const saved = memory[concept.id]
+    const previous = saved?.past[saved.past.length - 1]
+    if (!previous) return ''
+    return motionChanges(previous, tuneOf(concept))
   }
 
   function motionStory(concept: Concept, prompt: string) {
     const brief = briefLabel(prompt)
-    const saved = memory[concept.id]
-    const untouched =
-      !saved ||
-      (saved.past.length === 0 && saved.strength === 'natural' && saved.motion === startingMotion(concept))
-    if (untouched) return motionStartNote(concept.name, brief, startingMotion(concept))
-    return motionChangeNote({
-      name: concept.name,
-      brief,
-      motion: saved.motion,
-      strength: saved.strength,
-      previous: saved.past[saved.past.length - 1]?.motion,
-    })
+    const diff = motionDiffOf(concept)
+    if (!diff) return motionStartNote(concept.name, brief, startingMotion(concept))
+    return `Still ${concept.name}. ${diff}.`
   }
 
-  function remember(
-    conceptId: string,
-    next: { motion: MotionId; strength: MotionStrength; past: { motion: MotionId; strength: MotionStrength }[] },
-  ) {
-    setMemory((current) => ({ ...current, [conceptId]: next }))
+  function writeTune(conceptId: string, next: MotionSnap, past: MotionSnap[], playNow: boolean) {
+    tuneRef.current[conceptId] = next
+    setMemory((current) => ({ ...current, [conceptId]: { ...next, past } }))
     setActiveConceptId(conceptId)
     setMotionOpen(true)
     setShowCode(false)
-    setPlaySpec({ motion: next.motion, strength: next.strength })
+    if (!playNow) return
+    setPlaySpec(next)
     setPlayingId(conceptId)
     setPlayKey((key) => key + 1)
+  }
+
+  function updateSnap(conceptId: string, patch: Partial<MotionSnap>, mode: 'live' | 'commit') {
+    const concept = findConcept(conceptId)
+    if (!concept) return
+    const current = remembered(concept)
+    const { past, ...snap } = current
+    const next: MotionSnap = { ...snap, ...patch }
+    const same =
+      next.motion === snap.motion &&
+      next.duration === snap.duration &&
+      next.easing === snap.easing &&
+      next.movement === snap.movement &&
+      next.strength === snap.strength
+    if (same) {
+      if (mode === 'commit') play(conceptId, snap)
+      return
+    }
+    if (mode === 'live') {
+      if (!motionLive.current) {
+        motionLive.current = true
+        pastRef.current[conceptId] = [...past, snap]
+      }
+      writeTune(conceptId, next, pastRef.current[conceptId] ?? [...past, snap], false)
+      return
+    }
+    motionLive.current = false
+    writeTune(conceptId, next, [...past, snap], true)
   }
 
   function finishGeneration(prompt: string, updateId: string | null) {
@@ -671,18 +711,17 @@ export function Provider({ children }: { children: ReactNode }) {
         if (!present) return
         const asked = motionFromText(value)
         if (asked === 'choose') {
-          const current = remembered(present)
           setMotionOpen(true)
           setShowCode(false)
-          setClarify(motionFollowUp(current.motion, present))
+          setClarify(null)
+          setRefineText('')
+          play(present.id)
           return
         }
         if (asked === 'keep') {
-          setMotionOpen(true)
-          setShowCode(false)
-          play(present.id)
-          setRefineText('')
           setClarify(null)
+          setRefineText('')
+          if (motionOpen) play(present.id)
           return
         }
         if (asked === 'softer' || asked === 'present') {
@@ -691,9 +730,29 @@ export function Provider({ children }: { children: ReactNode }) {
           setClarify(null)
           return
         }
+        const intent = tuneIntent(value)
+        if (intent) {
+          const snap = tuneOf(present)
+          updateSnap(
+            present.id,
+            {
+              duration: intent.durationScale ? clampTune(Math.round(snap.duration * intent.durationScale), 400, 2400) : snap.duration,
+              easing: intent.easing ?? snap.easing,
+              movement: intent.movementDelta != null ? clampTune(snap.movement + intent.movementDelta, 0, 100) : snap.movement,
+            },
+            'commit',
+          )
+          setRefineText('')
+          setClarify(null)
+          const designed = interpret(present, value)
+          if (!('clarify' in designed) && !('unclear' in designed) && Object.keys(designed.patch).length > 0) {
+            applyAi(designed.patch, designed.summary)
+          }
+          return
+        }
         if (asked) {
           const result = interpret(present, value)
-          if (!('clarify' in result) && Object.keys(result.patch).length > 0) {
+          if (!('clarify' in result) && !('unclear' in result) && Object.keys(result.patch).length > 0) {
             applyAi(result.patch, result.summary)
           }
           chooseMotion(asked, present.id)
@@ -702,6 +761,10 @@ export function Provider({ children }: { children: ReactNode }) {
           return
         }
         const result = interpret(present, value)
+        if ('unclear' in result) {
+          setRefineError(result.message)
+          return
+        }
         if ('clarify' in result) {
           setClarify(result)
           return
@@ -738,9 +801,9 @@ export function Provider({ children }: { children: ReactNode }) {
     })
   }
 
-  function play(id: string, spec?: { motion: MotionId; strength: MotionStrength }) {
+  function play(id: string, spec?: MotionSnap) {
     const concept = findConcept(id)
-    const next = spec ?? (concept ? { motion: motionOf(concept), strength: strengthOf(concept) } : playSpec)
+    const next = spec ?? (concept ? tuneOf(concept) : playSpec)
     setPlaySpec(next)
     setPlayingId(id)
     setPlayKey((k) => k + 1)
@@ -761,19 +824,28 @@ export function Provider({ children }: { children: ReactNode }) {
     if (!target) return
     const concept = findConcept(target)
     if (!concept) return
+    motionLive.current = false
     const current = remembered(concept)
     if (current.motion === id) {
       setMotionOpen(true)
       setShowCode(false)
       setActiveConceptId(target)
-      play(target, { motion: current.motion, strength: current.strength })
+      play(target, tuneOf(concept))
       return
     }
-    remember(target, {
-      motion: id,
-      strength: 'natural',
-      past: [...current.past, { motion: current.motion, strength: current.strength }],
-    })
+    const { past, ...snap } = current
+    writeTune(target, { ...snap, motion: id }, [...past, snap], true)
+  }
+
+  function previewMotion(id: MotionId, conceptId?: string) {
+    const target = conceptId ?? editorRef.current?.present.id
+    if (!target) return
+    const concept = findConcept(target)
+    if (!concept) return
+    const snap = tuneOf(concept)
+    setMotionOpen(true)
+    setShowCode(false)
+    play(target, { ...snap, motion: id })
   }
 
   function setMotionStrength(strength: MotionStrength, conceptId?: string) {
@@ -781,17 +853,61 @@ export function Provider({ children }: { children: ReactNode }) {
     if (!target) return
     const concept = findConcept(target)
     if (!concept) return
-    const current = remembered(concept)
-    if (current.strength === strength) {
-      setMotionOpen(true)
-      play(target, { motion: current.motion, strength })
-      return
-    }
-    remember(target, {
-      motion: current.motion,
-      strength,
-      past: [...current.past, { motion: current.motion, strength: current.strength }],
-    })
+    const snap = tuneOf(concept)
+    const movement = strength === 'soft' ? 28 : strength === 'present' ? 78 : 50
+    const duration =
+      strength === 'soft'
+        ? clampTune(Math.round(snap.duration * 1.2), 400, 2400)
+        : strength === 'present'
+          ? clampTune(Math.round(snap.duration * 0.82), 400, 2400)
+          : snap.duration
+    updateSnap(target, { strength, movement, duration }, 'commit')
+  }
+
+  function setDuration(ms: number, conceptId?: string, live = false) {
+    const target = conceptId ?? editorRef.current?.present.id
+    if (!target) return
+    updateSnap(target, { duration: clampTune(Math.round(ms), 400, 2400) }, live ? 'live' : 'commit')
+  }
+
+  function setEasing(easing: MotionSnap['easing'], conceptId?: string) {
+    const target = conceptId ?? editorRef.current?.present.id
+    if (!target) return
+    motionLive.current = false
+    updateSnap(target, { easing }, 'commit')
+  }
+
+  function setMovement(movement: number, conceptId?: string, live = false) {
+    const target = conceptId ?? editorRef.current?.present.id
+    if (!target) return
+    updateSnap(target, { movement: clampTune(Math.round(movement), 0, 100) }, live ? 'live' : 'commit')
+  }
+
+  function endMotionLive(conceptId?: string) {
+    if (!motionLive.current) return
+    motionLive.current = false
+    const target = conceptId ?? editorRef.current?.present.id
+    if (!target) return
+    const snap = tuneRef.current[target]
+    if (snap) play(target, snap)
+  }
+
+  function playBefore(conceptId?: string) {
+    const target = conceptId ?? editorRef.current?.present.id
+    if (!target) return
+    const previous = memory[target]?.past[memory[target].past.length - 1]
+    if (!previous) return
+    setMotionOpen(true)
+    play(target, previous)
+  }
+
+  function playAfter(conceptId?: string) {
+    const target = conceptId ?? editorRef.current?.present.id
+    if (!target) return
+    const concept = findConcept(target)
+    if (!concept) return
+    setMotionOpen(true)
+    play(target, tuneOf(concept))
   }
 
   function undoMotion(conceptId?: string) {
@@ -801,9 +917,10 @@ export function Provider({ children }: { children: ReactNode }) {
     if (!concept) return
     const current = remembered(concept)
     if (current.past.length === 0) return
+    motionLive.current = false
     const past = [...current.past]
     const prev = past.pop()!
-    remember(target, { motion: prev.motion, strength: prev.strength, past })
+    writeTune(target, prev, past, true)
   }
 
   function focusMark(conceptId: string) {
@@ -950,15 +1067,26 @@ export function Provider({ children }: { children: ReactNode }) {
     playingId,
     playKey,
     play,
+    playSnap: playSpec,
+    tuneOf,
+    shownTune,
     motionOf,
     strengthOf,
     motionStory,
+    motionDiffOf,
     canUndoMotion: (conceptId: string) => (memory[conceptId]?.past.length ?? 0) > 0,
     motionOpen,
     setMotionOpen,
     toggleMotion,
     chooseMotion,
+    previewMotion,
     setMotionStrength,
+    setDuration,
+    setEasing,
+    setMovement,
+    endMotionLive,
+    playBefore,
+    playAfter,
     undoMotion,
     focusMark,
     motionHintOn,
