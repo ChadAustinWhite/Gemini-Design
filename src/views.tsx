@@ -1,7 +1,7 @@
 import { LogoMark } from './LogoMark'
-import { MotionAdjust } from './MotionAdjust'
-import { IcoMoon, IcoPencil, IcoPlay, IcoSun, Sparkle } from './icons'
-import { MOTIONS, PLACEMENTS, SUGGESTIONS, motionById } from './model'
+import { MotionAdjust, MotionCompare } from './MotionAdjust'
+import { IcoGuitar, IcoImageSpark, IcoMoon, IcoPencil, IcoPlay, IcoSun, Sparkle } from './icons'
+import { PLACEMENTS, SUGGESTIONS, motionById } from './model'
 import { PromptComposer } from './Prompt'
 import { useApp } from './store'
 
@@ -38,9 +38,10 @@ export function HomeView() {
         />
         <div className="suggestions">
           {SUGGESTIONS.map((s) => (
-            <button key={s} type="button" className="suggestion" onClick={() => app.submitPrompt(s)}>
-              <Sparkle size={18} />
-              <span>{s}</span>
+            <button key={s.label} type="button" className="suggestion" onClick={() => app.submitPrompt(s.label)}>
+              {s.icon === 'image' && <IcoImageSpark />}
+              {s.icon === 'music' && <IcoGuitar />}
+              <span>{s.label}</span>
             </button>
           ))}
         </div>
@@ -168,14 +169,18 @@ export function ResultsView() {
                 {app.compareIds.map((id) => {
                   const concept = concepts.find((c) => c.id === id)
                   if (!concept) return null
+                  const shown = app.shownTune(concept)
                   return (
                     <article key={id} className="compare-card">
                       <div className="concept-preview" style={{ background: concept.bg }}>
                         <LogoMark
                           concept={concept}
                           pixelSize={140}
-                          motion={app.motionOf(concept)}
-                          strength={app.strengthOf(concept)}
+                          motion={shown.motion}
+                          strength={shown.strength}
+                          duration={shown.duration}
+                          easing={shown.easing}
+                          movement={shown.movement}
                           animate={app.playingId === id}
                           key={`${id}-${app.playKey}`}
                         />
@@ -200,6 +205,7 @@ export function ResultsView() {
             <div className="concept-grid" role="list">
               {concepts.map((concept) => {
                 const selected = app.activeConceptId === concept.id || (app.compare && app.compareIds.includes(concept.id))
+                const shown = app.shownTune(concept)
                 return (
                   <div key={concept.id} className={`concept-card ${selected ? 'is-selected' : ''}`} role="listitem">
                     <button
@@ -212,8 +218,11 @@ export function ResultsView() {
                         <LogoMark
                           concept={concept}
                           pixelSize={112}
-                          motion={app.motionOf(concept)}
-                          strength={app.strengthOf(concept)}
+                          motion={shown.motion}
+                          strength={shown.strength}
+                          duration={shown.duration}
+                          easing={shown.easing}
+                          movement={shown.movement}
                           animate={app.playingId === concept.id}
                           key={`${concept.id}-${app.playingId === concept.id ? app.playKey : 'still'}`}
                         />
@@ -391,14 +400,16 @@ export function VideosView() {
   const project = app.activeProject ?? app.projects[0]
   const concept =
     project?.concepts.find((c) => c.id === app.activeConceptId) ?? project?.concepts[0] ?? null
-  const treatment = concept ? motionById(app.motionOf(concept)) : null
+  const tune = concept ? app.tuneOf(concept) : null
+  const shown = concept ? app.shownTune(concept) : null
+  const treatment = tune ? motionById(tune.motion) : null
   return (
     <section className="page">
       <header className="page-head">
         <h1>Motion</h1>
         <p className="lede">Adjust how this mark moves. The brief and the design stay with you.</p>
       </header>
-      {!concept || !project || !treatment ? (
+      {!concept || !project || !shown || !treatment ? (
         <div className="status-block">
           <h2>No studies yet</h2>
           <p>Generate a logo to preview motion.</p>
@@ -409,10 +420,13 @@ export function VideosView() {
             <LogoMark
               concept={concept}
               pixelSize={200}
-              motion={app.motionOf(concept)}
-              strength={app.strengthOf(concept)}
+              motion={shown.motion}
+              strength={shown.strength}
+              duration={shown.duration}
+              easing={shown.easing}
+              movement={shown.movement}
               animate={app.playingId === concept.id}
-              key={`${concept.id}-${app.playingId === concept.id ? app.playKey : 'still'}`}
+              key={`${concept.id}-${app.playingId === concept.id ? `${app.playKey}-${shown.motion}` : 'still'}`}
             />
           </div>
           <div className="motion-caption">
@@ -448,30 +462,8 @@ export function VideosView() {
               ))}
             </div>
           )}
-          <p className="motion-note">Same mark, different motion</p>
-          <div className="motion-pick" role="listbox" aria-label="Motion treatments">
-            {MOTIONS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="option"
-                aria-selected={app.motionOf(concept) === item.id}
-                className={`motion-card ${app.motionOf(concept) === item.id ? 'is-on' : ''}`}
-                onClick={() => app.chooseMotion(item.id, concept.id)}
-              >
-                <span className="motion-preview" style={{ background: concept.bg }}>
-                  <LogoMark
-                    concept={concept}
-                    pixelSize={52}
-                    motion={item.id}
-                    strength={item.id === app.motionOf(concept) ? app.strengthOf(concept) : 'natural'}
-                    preview
-                  />
-                </span>
-                <span className="motion-label">{item.label}</span>
-              </button>
-            ))}
-          </div>
+          <p className="motion-note">Play an alternative without replacing the selected version.</p>
+          <MotionCompare concept={concept} />
         </>
       )}
     </section>

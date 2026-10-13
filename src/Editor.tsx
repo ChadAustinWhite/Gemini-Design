@@ -26,12 +26,11 @@ import {
   Sparkle,
 } from './icons'
 import { LogoMark } from './LogoMark'
-import { MotionAdjust } from './MotionAdjust'
+import { MotionAdjust, MotionCompare } from './MotionAdjust'
 import {
   FONTS,
   GROUNDS,
   INK,
-  MOTIONS,
   REFINE_CHIPS,
   SHAPES,
   STYLES,
@@ -97,7 +96,9 @@ export function Editor() {
   const px = Math.round(current.size * 2.15)
   const font = fontById(concept.fontId)
   const prompt = app.activeProject?.prompt ?? ''
-  const motion = motionById(app.motionOf(concept))
+  const tune = app.tuneOf(concept)
+  const shown = app.shownTune(concept)
+  const motion = motionById(tune.motion)
   const spec = `${font.name} · ${shapeLabel(concept.shape)} · ${styleLabel(concept.style)} · ${concept.size}px · ${motion.label}`
   const advice = motionAdvice(concept, app.motionOf(concept))
   const ratio = contrastRatio(concept.fg, concept.bg)
@@ -316,10 +317,13 @@ export function Editor() {
                       ref={svgRef}
                       concept={concept}
                       pixelSize={px}
-                      motion={app.motionOf(concept)}
-                      strength={app.strengthOf(concept)}
+                      motion={shown.motion}
+                      strength={shown.strength}
+                      duration={shown.duration}
+                      easing={shown.easing}
+                      movement={shown.movement}
                       animate={app.playingId === concept.id}
-                      key={app.playingId === concept.id ? app.playKey : 'still'}
+                      key={app.playingId === concept.id ? `${app.playKey}-${shown.motion}` : 'still'}
                     />
                   </button>
                   {app.selected && app.tool === 'select' && (
@@ -395,30 +399,8 @@ export function Editor() {
                       <IcoClose size={16} />
                     </button>
                   </div>
-                  <p className="motion-note">Same mark, different motion</p>
-                  <div className="motion-row" role="listbox" aria-label="Ways to animate this mark">
-                    {MOTIONS.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        role="option"
-                        aria-selected={app.motionOf(concept) === item.id}
-                        className={`motion-card ${app.motionOf(concept) === item.id ? 'is-on' : ''}`}
-                        onClick={() => app.chooseMotion(item.id, concept.id)}
-                      >
-                        <span className="motion-preview" style={{ background: concept.bg }}>
-                          <LogoMark
-                            concept={concept}
-                            pixelSize={44}
-                            motion={item.id}
-                            strength={item.id === app.motionOf(concept) ? app.strengthOf(concept) : 'natural'}
-                            preview
-                          />
-                        </span>
-                        <span className="motion-label">{item.label}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <p className="motion-note">Play an alternative without replacing the selected version.</p>
+                  <MotionCompare concept={concept} />
                 </div>
               )}
 

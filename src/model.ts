@@ -28,6 +28,15 @@ export type ModelId = 'flash-lite' | 'flash' | 'pro'
 export type Phase = 'idle' | 'loading' | 'ready' | 'error'
 export type MotionId = 'draw' | 'settle' | 'breathe' | 'turn' | 'rise' | 'reveal'
 export type MotionStrength = 'soft' | 'natural' | 'present'
+export type EasingId = 'linear' | 'ease-out' | 'ease' | 'smooth'
+
+export interface MotionSnap {
+  motion: MotionId
+  strength: MotionStrength
+  duration: number
+  easing: EasingId
+  movement: number
+}
 
 export interface Concept {
   id: string
@@ -459,6 +468,71 @@ export function motionMs(id: MotionId, strength: MotionStrength) {
   return Math.round(MOTION_MS[id] * STRENGTH_SCALE[strength])
 }
 
+export const EASINGS: { id: EasingId; label: string; css: string }[] = [
+  { id: 'linear', label: 'Linear', css: 'linear' },
+  { id: 'ease-out', label: 'Ease out', css: 'cubic-bezier(0.2, 0.7, 0.2, 1)' },
+  { id: 'ease', label: 'Ease', css: 'ease' },
+  { id: 'smooth', label: 'Smooth', css: 'cubic-bezier(0.45, 0.05, 0.55, 0.95)' },
+]
+
+export function easingById(id: EasingId) {
+  return EASINGS.find((item) => item.id === id) ?? EASINGS[1]
+}
+
+export function defaultSnap(motion: MotionId): MotionSnap {
+  return { motion, strength: 'natural', duration: MOTION_MS[motion], easing: 'ease-out', movement: 50 }
+}
+
+export function clampTune(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
+}
+
+export function motionStyle(snap: Pick<MotionSnap, 'duration' | 'easing' | 'movement'>) {
+  const t = clampTune(snap.movement, 0, 100) / 100
+  const reveal = Math.round(24 + t * 76)
+  return {
+    '--motion-ms': `${snap.duration}ms`,
+    '--motion-ease': easingById(snap.easing).css,
+    '--settle-from': (0.985 - t * 0.17).toFixed(3),
+    '--rise-from': `${(2 + t * 22).toFixed(1)}px`,
+    '--turn-from': `${-(4 + t * 26).toFixed(1)}deg`,
+    '--breathe-scale': (1.012 + t * 0.09).toFixed(3),
+    '--reveal-inset': `${reveal}%`,
+  } as Record<string, string>
+}
+
+export function motionChanges(before: MotionSnap, after: MotionSnap) {
+  const parts: string[] = []
+  if (before.motion !== after.motion) parts.push(`${motionById(before.motion).label} → ${motionById(after.motion).label}`)
+  if (before.duration !== after.duration) {
+    parts.push(`Duration ${(before.duration / 1000).toFixed(1)}s → ${(after.duration / 1000).toFixed(1)}s`)
+  }
+  if (before.easing !== after.easing) parts.push(`Easing ${easingById(before.easing).label} → ${easingById(after.easing).label}`)
+  if (before.movement !== after.movement) parts.push(`Movement ${before.movement} → ${after.movement}`)
+  return parts.join(' · ')
+}
+
+export function motionAlternatives(current: MotionId) {
+  const index = MOTIONS.findIndex((item) => item.id === current)
+  const rest = [...MOTIONS.slice(index + 1), ...MOTIONS.slice(0, index)].filter((item) => item.id !== current)
+  return rest.slice(0, 3)
+}
+
+export function tuneIntent(raw: string): { durationScale?: number; easing?: EasingId; movementDelta?: number } | null {
+  const t = raw.toLowerCase()
+  const intent: { durationScale?: number; easing?: EasingId; movementDelta?: number } = {}
+  if (/\bshorter\b|\bquicker\b|\bfaster\b/.test(t)) intent.durationScale = 0.75
+  if (/\blonger\b|\bslower\b/.test(t)) intent.durationScale = 1.35
+  if (/\bsmooth/.test(t) || /ease in out/.test(t)) intent.easing = 'smooth'
+  else if (/ease out/.test(t) || /\bsnappier\b/.test(t)) intent.easing = 'ease-out'
+  else if (/\blinear\b/.test(t)) intent.easing = 'linear'
+  else if (/\bease\b/.test(t)) intent.easing = 'ease'
+  if (/\bmore movement\b|\bfarther\b|\bbigger movement\b/.test(t)) intent.movementDelta = 24
+  if (/\bless movement\b|\bsmaller movement\b/.test(t)) intent.movementDelta = -24
+  if (intent.durationScale == null && !intent.easing && intent.movementDelta == null) return null
+  return intent
+}
+
 export function briefLabel(prompt: string) {
   const clean = prompt.replace(/\s+/g, ' ').trim()
   if (clean.length <= 52) return clean
@@ -539,7 +613,7 @@ export function motionFromText(raw: string): MotionId | 'choose' | 'keep' | 'sof
   if (/\brise\b|\blift\b/.test(t)) return 'rise'
   if (/\breveal\b|\bwipe\b/.test(t)) return 'reveal'
   if (/\bsettle\b|\bfade in\b/.test(t)) return 'settle'
-  if (/\banimat|\bmotion\b|\bplayback\b/.test(t)) return 'choose'
+  if (/\banimate this\b|\bopen motion\b|\bplayback\b/.test(t) || t === 'animate') return 'choose'
   return null
 }
 
@@ -563,13 +637,69 @@ export function placementPatch(choice: string): Partial<Concept> | null {
   return null
 }
 
+function contextualAsk(c: Concept) {
+  const alt = c.shape === 'circle' ? 'Use a diamond' : 'Use a circle'
+  if (c.style === 'bold' || c.style === 'filled') {
+    return {
+      clarify: true as const,
+      message: `${c.name} is ${c.style}. Quiet the weight, or change the ${c.shape} mask?`,
+      options: ['Make it quieter', alt, 'Keep it'],
+    }
+  }
+  return {
+    clarify: true as const,
+    message: `Keep the ${c.shape} mask, or make ${c.name} bolder?`,
+    options: ['Keep it', 'Make it bolder', alt],
+  }
+}
+
+function isOnlyVague(raw: string) {
+  const t = raw.toLowerCase().replace(/[?.!]/g, '').replace(/\s+/g, ' ').trim()
+  return /^(please )?(make|change|adjust|tweak|improve|refine)( (it|this|the mark|the logo))?( (better|nicer|different|a bit))?$/.test(t)
+    || /^(better|nicer|different|tweak it|improve it|something else|try something)$/.test(t)
+}
+
 export function interpret(
   conceptValue: Concept,
   raw: string,
-): { patch: Partial<Concept>; summary: string } | { clarify: true; message: string; options: string[] } {
+):
+  | { patch: Partial<Concept>; summary: string }
+  | { clarify: true; message: string; options: string[] }
+  | { unclear: true; message: string } {
   const t = raw.toLowerCase()
   const patch: Partial<Concept> = {}
   const bits: string[] = []
+  const shapes = [
+    ['hexagon', /\bhex/],
+    ['shield', /\bshield/],
+    ['diamond', /\bdiamond/],
+    ['arch', /\barch/],
+    ['oval', /\boval/],
+    ['circle', /\bcircle|\bround/],
+    ['square', /\bsquare|\btile/],
+  ] as const
+  const shapeHits = shapes.filter(([, pattern]) => pattern.test(t)).map(([name]) => name)
+  if (shapeHits.length > 1) {
+    return {
+      clarify: true,
+      message: `Use a ${shapeHits[0]} or a ${shapeHits[1]}?`,
+      options: shapeHits.slice(0, 2).map((name) => `Use a ${name}`),
+    }
+  }
+  const inks = [
+    ['Warm brown ink', /brown|coffee|warm ink/],
+    ['Deep green', /\bgreen/],
+    ['Navy ink', /navy|blue ink/],
+    ['Black ink', /black ink|dark ink/],
+  ] as const
+  const inkHits = inks.filter(([, pattern]) => pattern.test(t)).map(([name]) => name)
+  if (inkHits.length > 1) {
+    return {
+      clarify: true,
+      message: `Use ${inkHits[0].toLowerCase()} or ${inkHits[1].toLowerCase()}?`,
+      options: inkHits.slice(0, 2),
+    }
+  }
 
   if (/outline|stroke|line drawing/.test(t)) {
     patch.style = 'outlined'
@@ -658,12 +788,38 @@ export function interpret(
     }
   }
 
-  if (!bits.length) {
+  if (/\b(shape|mask)\b/.test(t) && !patch.shape) {
     return {
       clarify: true,
-      message: 'I can change the mask, weight, or ink. What should I adjust?',
-      options: ['Make it bolder', 'Use a circle', 'Warm brown ink'],
+      message: 'Which mask should this use?',
+      options: ['Use a circle', 'Use a square', 'Use a diamond'],
     }
+  }
+  if (/\b(color|colour|ink)\b/.test(t) && !patch.fg) {
+    return {
+      clarify: true,
+      message: 'Which ink should this use?',
+      options: ['Warm brown ink', 'Deep green', 'Navy ink'],
+    }
+  }
+  if (/\b(font|typeface)\b/.test(t) && !patch.fontId) {
+    return {
+      clarify: true,
+      message: 'Which typeface should this use?',
+      options: ['Helvetica Neue', 'Futura', 'Bodoni'],
+    }
+  }
+
+  if (!bits.length) {
+    if (/\b(animation|motion)\b/.test(t)) {
+      return {
+        clarify: true,
+        message: 'Shorten it, smooth the easing, or move it farther?',
+        options: ['Shorter', 'Smoother easing', 'More movement'],
+      }
+    }
+    if (isOnlyVague(raw)) return contextualAsk(conceptValue)
+    return { unclear: true, message: 'Name the mask, type, ink, or motion to change.' }
   }
 
   const summary =
@@ -716,10 +872,12 @@ export const SEED: Project[] = [
   },
 ]
 
-export const SUGGESTIONS = [
-  'Design a logo mask for a coffee brand',
-  'Sketch a monogram for a small roaster',
-  'Try a geometric badge with quiet geometry',
+export const SUGGESTIONS: { label: string; icon?: 'image' | 'music' }[] = [
+  { label: 'Create image', icon: 'image' },
+  { label: 'Create music', icon: 'music' },
+  { label: 'Help me learn' },
+  { label: 'Boost my day' },
+  { label: 'Write anything' },
 ]
 
 export const BRIEFS = [

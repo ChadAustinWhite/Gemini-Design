@@ -1,5 +1,5 @@
 import { forwardRef } from 'react'
-import { fontById, motionMs, voiceLabel, type Concept, type MotionId, type MotionStrength, type Shape } from './model'
+import { fontById, motionMs, motionStyle, voiceLabel, type Concept, type EasingId, type MotionId, type MotionStrength, type Shape } from './model'
 
 function shapeFrame(shape: Shape) {
   switch (shape) {
@@ -252,10 +252,13 @@ export const LogoMark = forwardRef<
     animate?: boolean
     motion?: MotionId
     strength?: MotionStrength
+    duration?: number
+    easing?: EasingId
+    movement?: number
     preview?: boolean
     className?: string
   }
->(function LogoMark({ concept, pixelSize, animate, motion = 'draw', strength = 'natural', preview, className }, ref) {
+>(function LogoMark({ concept, pixelSize, animate, motion = 'draw', strength = 'natural', duration, easing, movement, preview, className }, ref) {
   const px = pixelSize ?? Math.round(concept.size * 2.25)
   const font = fontById(concept.fontId)
   const solid = concept.voice !== 'vignelli' && concept.style !== 'outlined' && concept.style !== 'minimal'
@@ -267,7 +270,11 @@ export const LogoMark = forwardRef<
       ref={ref}
       data-motion={motion}
       data-strength={strength}
-      style={{ ['--motion-ms' as string]: `${motionMs(motion, strength)}ms` }}
+      style={motionStyle({
+        duration: duration ?? motionMs(motion, strength),
+        easing: easing ?? 'ease-out',
+        movement: movement ?? (strength === 'soft' ? 28 : strength === 'present' ? 78 : 50),
+      })}
       className={`logo-svg ${animate ? 'is-animating' : ''} ${preview ? 'is-preview' : ''} ${className ?? ''}`}
       width={px}
       height={px}
